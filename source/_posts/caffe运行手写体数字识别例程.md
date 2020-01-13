@@ -32,6 +32,8 @@ done
 可见该脚本实现从下载地址下载mnist数据集，`bash get_mnist.sh`执行该脚本，会将该数据集下载到当前目录下，该数据集的格式可以在相关的网站查询得到。
 
 **TRAINING SET LABEL FILE (train-labels-idx1-ubyte):**
+
+
 | [offset] | [type]     |     [value]    |      [description] |
 | ------ | -------- | ----- | ----- |
 |0000 |    32 bit integer | 0x00000801(2049) |magic number (MSB first)
@@ -41,6 +43,8 @@ done
 |........|
 |xxxx|     unsigned byte|   ??|               label
 **TRAINING SET IMAGE FILE (train-images-idx3-ubyte):**
+
+
 |[offset]| [type]|          [value]|          [description]
 | ---- | ---- | ---- | ---- |
 |0000|     32 bit integer|  0x00000803(2051)| magic number
