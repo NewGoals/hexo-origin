@@ -42,6 +42,8 @@ done
 |0009 |    unsigned byte  | ??              | label
 |........|
 |xxxx|     unsigned byte|   ??|               label
+
+
 **TRAINING SET IMAGE FILE (train-images-idx3-ubyte):**
 
 
@@ -55,6 +57,8 @@ done
 0017|     unsigned byte|   ??|               pixel
 ........|
 xxxx|     unsigned byte|   ??|               pixel
+
+
 测试集格式同样类似
 
 ## 转换格式为LMDB
@@ -139,7 +143,8 @@ void convert_dataset(const char* image_filename, const char* label_filename,
   // 用C++输入文件流以二进制方式打开文件
   std::ifstream image_file(image_filename, std::ios::in | std::ios::binary);
   std::ifstream label_file(label_filename, std::ios::in | std::ios::binary);
-  // CHECK宏来自于google的glog库，类似于标准库中的assert宏，给定条件不满时终止程序，条件不满时输出后面程序
+  // CHECK宏来自于google的glog库，类似于标准库中的assert宏
+  // 给定条件不满时终止程序，条件不满时输出后面程序
   CHECK(image_file) << "Unable to open file " << image_filename;
   CHECK(label_file) << "Unable to open file " << label_filename;
   // Read the magic and the meta data
@@ -149,10 +154,14 @@ void convert_dataset(const char* image_filename, const char* label_filename,
   uint32_t rows;
   uint32_t cols;
 
-  // read()是以字符的类型读取，而MNIST的魔数由32位整型组成，并且使用大端存储，应读4个字符共32位，read()将4个字符读取到magic地址的缓存中，必要时进行强制类型转换，并将其转换为小端存储。总条目数，行数，列数同样如此
+  // read()是以字符的类型读取，而MNIST的魔数由32位整型组成，并且使用大端存储
+  // 应读4个字符共32位，read()将4个字符读取到magic地址的缓存中
+  // 必要时进行强制类型转换，并将其转换为小端存储。总条目数，行数，列数同样如此
   image_file.read(reinterpret_cast<char*>(&magic), 4);
   magic = swap_endian(magic);
-  // 将大端存储转换为小端存储后即可使用同样来自于Glog的CHECK_EQ来判断其是否与2051相等，标签文件则要判断其是否与2049相等
+  // 将大端存储转换为小端存储后
+  // 使用同样来自于Glog的CHECK_EQ来判断其是否与2051相等
+  // 标签文件则要判断其是否与2049相等
   CHECK_EQ(magic, 2051) << "Incorrect image file magic.";
   label_file.read(reinterpret_cast<char*>(&magic), 4);
   magic = swap_endian(magic);
@@ -173,11 +182,16 @@ void convert_dataset(const char* image_filename, const char* label_filename,
   scoped_ptr<db::Transaction> txn(db->NewTransaction());
 
   // Storing to db
+  // 将数据存储到db中
   char label;
   char* pixels = new char[rows * cols];
   int count = 0;
   string value;
 
+  // Datum是caffe.proto定义的message，这里用来存储图片
+  // 由于image_file是采用unsigned byte类型，Datum中也有相似的bytes类型
+  // 因此这里采用data来进行存取，Datum也支持float类型的数据
+  // C++里没有byte类型，但是有与之相似的char类型，用其保存byte
   Datum datum;
   datum.set_channels(1);
   datum.set_height(rows);
@@ -211,5 +225,93 @@ int main(int argc, char** argv) {
 #ifndef GFLAGS_GFLAGS_H_
   namespace gflags = google;
 #endif
-```
 
+  FLAGS_alsologtostderr = 1;
+
+  gflags::SetUsageMessage("This script converts the MNIST dataset to\n"
+        "the lmdb/leveldb format used by Caffe to load data.\n"
+        "Usage:\n"
+        "    convert_mnist_data [FLAGS] input_image_file input_label_file "
+        "output_db_file\n"
+        "The MNIST dataset could be downloaded at\n"
+        "    http://yann.lecun.com/exdb/mnist/\n"
+        "You should gunzip them after downloading,"
+        "or directly use data/mnist/get_mnist.sh\n");
+  gflags::ParseCommandLineFlags(&argc, &argv, true);
+
+  // FLAGS_backend在前面通过DEFINE_string定义，是字符串类型
+  const string& db_backend = FLAGS_backend;
+
+  if (argc != 4) {
+    gflags::ShowUsageWithFlagsRestrict(argv[0],
+        "examples/mnist/convert_mnist_data");
+  } else {
+    google::InitGoogleLogging(argv[0]);
+    convert_dataset(argv[1], argv[2], argv[3], db_backend);
+  }
+  return 0;
+}
+#else
+int main(int argc, char** argv) {
+  LOG(FATAL) << "This example requires LevelDB and LMDB; " <<
+  "compile with USE_LEVELDB and USE_LMDB.";
+}
+#endif  // USE_LEVELDB and USE_LMDB
+```
+数据类型多种多样，不可能用一套代码实现所有类型输入数据的读取。转化成统一格式可以简化数据读取层的实现，另一方面，使用LMDB可以提高磁盘的IO利用率。
+
+接下来我们用LeNet-5模型来进行训练，原版的LeNet-5模型稍有不同，比如将激活函数由Sigmoid改为ReLU，该模型存放在examples/mnist/lenet_train_test.prototxt中。使用python/draw_net.py可以查看网络结构。
+
+## 训练超参数
+caffe也为该例程提供了训练的超参数和脚本，查看examples/mnist/train_lenet.sh脚本。
+``` bash
+#!/usr/bin/env sh
+set -e
+
+./build/tools/caffe train --solver=examples/mnist/lenet_solver.prototxt $@
+```
+该脚本使用了build/tools/caffe.bin的二进制程序(caffe是指向caffe.bin的)，并且使用examples/mnist/lenet_solver.prototxt作为求解器。
+``` protobuf
+# The train/test net protocol buffer definition
+net: "examples/mnist/lenet_train_test.prototxt"
+# test_iter specifies how many forward passes the test should carry out.
+# In the case of MNIST, we have test batch size 100 and 100 test iterations,
+# covering the full 10,000 testing images.
+test_iter: 100
+# Carry out testing every 500 training iterations.
+test_interval: 500
+# The base learning rate, momentum and the weight decay of the network.
+base_lr: 0.01
+momentum: 0.9
+weight_decay: 0.0005
+# The learning rate policy|学习速率的衰减策略
+lr_policy: "inv"
+gamma: 0.0001
+power: 0.75
+# Display every 100 iterations|每经过100次迭代，在屏幕上打印一次运行log
+display: 100
+# The maximum number of iterations
+max_iter: 10000
+# snapshot intermediate results|每5000次迭代打印一次快照
+snapshot: 5000
+snapshot_prefix: "examples/mnist/lenet"
+# solver mode: CPU or GPU|Caffe求解为CPU模式。可以改为GPU模式
+solver_mode: GPU
+```
+执行脚本后会在examples/mnist下生成四个文件，因为每5000次迭代会生成一次快照。具体caffe的运作机制可以在tools/caffe.cpp源代码中查看。
+```
+lenet_iter_10000.caffemodel
+lenet_iter_10000.solverstate
+lenet_iter_5000.caffemodel
+lenet_iter_5000.solverstate
+```
+在测试中我们选择的模型依旧为lenet_train_test.prototxt，它既包括训练的模型，也包括测试的模型，权重选择迭代10000次后的模型lenet_iter_10000.caffemodel，选择100次迭代为一个batch，100个batch刚好可以测试完10000张图片，并且使用指定的gpu进行测试。
+```
+./build/tools/caffe test -model examples/mnist/lenet_train_test.prototxt -weights examples/mnist/lenet_iter_10000.caffemodel -iterations 100 -gpu 0
+```
+效果如下所示，正确率达到了99.07%。
+```
+I0116 17:55:27.196736 13017 caffe.cpp:309] Loss: 0.0284669
+I0116 17:55:27.196743 13017 caffe.cpp:321] accuracy = 0.9907
+I0116 17:55:27.196750 13017 caffe.cpp:321] loss = 0.0284669 (* 1 = 0.0284669 loss)
+```
