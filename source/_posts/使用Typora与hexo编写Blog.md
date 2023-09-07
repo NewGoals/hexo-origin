@@ -7,6 +7,14 @@ tags:
 typora-root-url: ..
 ---
 
+<br></br>
+
+<center>Typora作为一款简单易上手的md编写工具，界面简洁美观，本人一直非常喜爱。之前我的Blog均部署在博客园，但是现在因为一些原因导致图片上传非常不便，因此，继续转而在Hexo部署，本文主要着重于解决Typora和Hexo之间存在的图片路径与上传问题。</center>
+
+</center>
+
+<!--more-->
+
 ## nodejs版本问题
 
 > hexo4.2.0中不支持更高14+更高级的nodejs，因此需要将nodejs版本降级，使用工具nvm来进行操作
